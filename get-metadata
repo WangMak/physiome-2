@@ -1,0 +1,74 @@
+import bs4
+import os
+import re
+import requests_cache
+
+session = requests_cache.CachedSession('pmr')
+BASE_URL = 'https://models.physiomeproject.org'
+
+def get_model_metadata(id):
+    url = '{}/{}/view'.format(BASE_URL, id)
+    response = session.get(url)
+    response.raise_for_status()
+
+    html_doc = bs4.BeautifulSoup(response.text, 'html.parser')
+    content = html_doc.find(id='content')
+    content_core = content.find(id='content-core').find('div')
+
+    metadata = {
+        'id': id,
+        'title': None,
+        'description': None,
+        'thumbnails': None,
+    }
+
+    # title
+    title_el = content.find('h1')
+    title = title_el.text.strip()
+
+    metadata['title'] = title
+
+    # description
+    description = ''
+    caption = ''
+    for child in content_core.children:
+        if child.name == 'title':
+            continue        
+        if isinstance(child, str):
+            description += child
+        elif child.name == 'table':
+            continue
+        else:
+            description += child.text
+
+    description = description.replace('\xa0', ' ')
+    description = description.strip()
+    description = re.sub(r'\n[ \t]+', '\n', description)
+    description = re.sub(r'\n{2,}', '\n\n', description)    
+
+    metadata['description'] = description
+
+    # image
+    images = content_core.find_all(class_='tmp-doc-informalfigure table')
+    metadata['thumbnails'] = []
+    for image in images:
+        image_src = image.find('img').get('src')
+        image_url = '{}/{}/{}'.format(BASE_URL, id, image_src)
+        response = session.get(image_url)
+        response.raise_for_status()
+
+        if not os.path.isdir(id):
+            os.makedirs(id)
+       
+        with open(os.path.join(id, image_src), 'wb') as file:
+            file.write(response.content)
+
+        metadata['thumbnails'].append({
+            'filename': image_src,
+            'caption': image.text.strip().replace('\xa0', ' '),
+        })
+
+    return metadata
+
+id = 'e/105'
+metadata = get_model_metadata(id)
