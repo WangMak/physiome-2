@@ -1,0 +1,56 @@
+export GIT_SSL_NO_VERIFY=true
+
+import git
+import glob
+import os
+import subprocess
+from biosimulators_utils.combine import data_model
+from biosimulators_utils.combine import io
+from biosimulators_utils.simulator import exec
+from biosimulators_utils.biosimulations.utils import get_file_extension_combine_uri_map
+
+file_extension_combine_uri_map = get_file_extension_combine_uri_map()
+
+repo = git.Repo('.')
+
+projects = [
+    {
+        'id': 'e/105',
+        'workspace': 'yc_poh/poh_2012',
+        'changeset': '713cd2940e5d99350a907e3199e29acf2180e094',
+    }
+]
+for project in projects:
+    # download project
+    git.Submodule.add(repo, project['id'], 'projects/' + project['id'], url='https://models.physiomeproject.org/w/' + project['workspace'])
+    subprocess.run(['git', 'checkout', project['changeset']], cwd='projects/' + project['id'])
+
+    # create archive
+    archive = data_model.CombineArchive()
+
+    # add files to archive
+    for filename in glob.glob('projects/' + project['id'] + '/**/*', recursive=True):
+        _, ext = os.path.splitext(filename)        
+        if ext:
+            formats = file_extension_combine_uri_map.get(ext[1:], None)
+            if len(formats) == 1:
+                format = list(formats)[0]
+            else:
+                format = 'http://purl.org/NET/mediatypes/application/octet-stream'
+        else:
+            format = 'http://purl.org/NET/mediatypes/application/octet-stream'
+
+        master = format == 'http://identifiers.org/combine.specifications/sed-ml'
+        archive.contents.append(data_model.CombineArchiveContent(filename, format, master))
+
+    # save archive
+    in_dir = '/home/jonrkarr/Documents/biosimulations-physiome/' + project['id']
+    archive_file = '/home/jonrkarr/Documents/biosimulations-physiome/' + project['id'] + '/archive.omex'
+    io.CombineArchiveWriter().run(archive, in_dir, archive_file)
+
+    # simulate archive
+    out_dir = '/home/jonrkarr/Documents/biosimulations-physiome/' + project['id'] + '/out'
+    docker_image = 'ghcr.io/biosimulators/opencor:latest'
+    exec.exec_sedml_docs_in_archive_with_containerized_simulator(archive_file, out_dir, docker_image)
+
+    # read results
