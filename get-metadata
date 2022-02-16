@@ -6,7 +6,10 @@ import requests_cache
 session = requests_cache.CachedSession('pmr')
 BASE_URL = 'https://models.physiomeproject.org'
 
+#identifier of the project's physiome link
 def get_model_metadata(id):
+
+    #requests the model
     url = '{}/{}/view'.format(BASE_URL, id)
     response = session.get(url)
     response.raise_for_status()
@@ -15,6 +18,7 @@ def get_model_metadata(id):
     content = html_doc.find(id='content')
     content_core = content.find(id='content-core').find('div')
 
+    #dictionary for metadata
     metadata = {
         'id': id,
         'title': None,
@@ -51,7 +55,8 @@ def get_model_metadata(id):
     # image
     images = content_core.find_all(class_='tmp-doc-informalfigure table')
     metadata['thumbnails'] = []
-    for image in images:
+    if images:
+      for image in images:
         image_src = image.find('img').get('src')
         image_url = '{}/{}/{}'.format(BASE_URL, id, image_src)
         response = session.get(image_url)
@@ -67,8 +72,14 @@ def get_model_metadata(id):
             'filename': image_src,
             'caption': image.text.strip().replace('\xa0', ' '),
         })
-
+    #looks for thumbnail if there is no class
+    else:
+      image_src = content_core.find('img').get('src')
+      metadata['thumbnails'].append({
+        'filename': image_src,
+      })
+    #returns the dictionary with title, description, and thumbnail
     return metadata
 
-id = 'e/105'
+id = 'e/2a3'
 metadata = get_model_metadata(id)
